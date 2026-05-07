@@ -146,7 +146,16 @@ if current_config:
         df = load_sheet_data(current_config["doc_id"], current_config["gid"])
         
     if not df.empty:
-        tab_data, tab_ai = st.tabs(["📊 데이터 대시보드", "🧠 AI 인사이트 브리핑"])
+        import shutil
+        has_nlm = shutil.which("nlm") is not None
+        
+        if has_nlm:
+            tabs = st.tabs(["📊 데이터 대시보드", "🧠 AI 인사이트 브리핑"])
+            tab_data, tab_ai = tabs[0], tabs[1]
+        else:
+            tabs = st.tabs(["📊 데이터 대시보드"])
+            tab_data = tabs[0]
+            tab_ai = None
         
         with tab_data:
             if "오집_일별_주별_월별_매출" in selected_sheet and "날짜" in df.columns and "일 매출" in df.columns:
@@ -190,84 +199,85 @@ if current_config:
             else:
                 st.dataframe(df, use_container_width=True)
             
-        with tab_ai:
-            st.markdown("### 🤖 NotebookLM 기반 데이터 인사이트 분석")
-            st.info("현재 조회 중인 데이터를 구글의 **NotebookLM AI**가 분석하여 주요 비즈니스 인사이트를 제공합니다.")
-            
-            user_query = st.text_area(
-                "💡 AI에게 물어볼 질문을 자유롭게 입력하세요:",
-                value="첨부된 데이터의 핵심적인 매출 또는 데이터 트렌드 특징 3가지를 분석하고, 실질적인 비즈니스 액션 아이디어를 제시해줘. 가독성 있게 마크다운으로 정리해줘.",
-                height=100
-            )
-            
-            if st.button("✨ AI 인사이트 브리핑 생성하기", key="generate_insight"):
-                with st.spinner("NotebookLM AI 서버에 데이터를 전송하고 심층 분석을 수행 중입니다... (최대 1~2분 소요)"):
-                    import subprocess
-                    import tempfile
-                    import os
-                    import re
-                    
-                    temp_path = ""
-                    try:
-                        with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode='w', encoding='utf-8') as f:
-                            df.to_csv(f.name, index=False)
-                            temp_path = f.name
-                            
-                        nb_name = f"Dashboard_{str(current_config['name']).replace(' ', '_')}"
-                        create_res = subprocess.run(["nlm", "create", "notebook", nb_name], capture_output=True, text=True, encoding='utf-8')
+        if tab_ai:
+            with tab_ai:
+                st.markdown("### 🤖 NotebookLM 기반 데이터 인사이트 분석")
+                st.info("현재 조회 중인 데이터를 구글의 **NotebookLM AI**가 분석하여 주요 비즈니스 인사이트를 제공합니다.")
+                
+                user_query = st.text_area(
+                    "💡 AI에게 물어볼 질문을 자유롭게 입력하세요:",
+                    value="첨부된 데이터의 핵심적인 매출 또는 데이터 트렌드 특징 3가지를 분석하고, 실질적인 비즈니스 액션 아이디어를 제시해줘. 가독성 있게 마크다운으로 정리해줘.",
+                    height=100
+                )
+                
+                if st.button("✨ AI 인사이트 브리핑 생성하기", key="generate_insight"):
+                    with st.spinner("NotebookLM AI 서버에 데이터를 전송하고 심층 분석을 수행 중입니다... (최대 1~2분 소요)"):
+                        import subprocess
+                        import tempfile
+                        import os
+                        import re
                         
-                        stdout_str = str(create_res.stdout) if create_res.stdout else ""
-                        stderr_str = str(create_res.stderr) if create_res.stderr else ""
-                        
-                        if create_res.returncode != 0 or "Authentication expired" in stderr_str:
-                            st.error("⚠️ NotebookLM 인증이 만료되었거나 연동에 실패했습니다.")
-                            st.markdown("터미널 창을 열고 `nlm login` 명령어를 실행하여 구글 계정을 다시 연동해주세요.")
-                        else:
-                            uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', stdout_str)
-                            if not uuid_match:
-                                st.error("노트북 ID를 가져오지 못했습니다.")
-                            else:
-                                nb_id = uuid_match.group(0)
-                                st.write("✅ NotebookLM 임시 분석 공간이 생성되었습니다. (데이터 업로드 중...)")
+                        temp_path = ""
+                        try:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode='w', encoding='utf-8') as f:
+                                df.to_csv(f.name, index=False)
+                                temp_path = f.name
                                 
-                                src_res = subprocess.run(["nlm", "source", "add", nb_id, "--file", temp_path, "--wait"], capture_output=True, text=True, encoding='utf-8')
-                                if src_res.returncode != 0:
-                                    st.error("데이터 업로드 중 오류가 발생했습니다.")
+                            nb_name = f"Dashboard_{str(current_config['name']).replace(' ', '_')}"
+                            create_res = subprocess.run(["nlm", "create", "notebook", nb_name], capture_output=True, text=True, encoding='utf-8')
+                            
+                            stdout_str = str(create_res.stdout) if create_res.stdout else ""
+                            stderr_str = str(create_res.stderr) if create_res.stderr else ""
+                            
+                            if create_res.returncode != 0 or "Authentication expired" in stderr_str:
+                                st.error("⚠️ NotebookLM 인증이 만료되었거나 연동에 실패했습니다.")
+                                st.markdown("터미널 창을 열고 `nlm login` 명령어를 실행하여 구글 계정을 다시 연동해주세요.")
+                            else:
+                                uuid_match = re.search(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', stdout_str)
+                                if not uuid_match:
+                                    st.error("노트북 ID를 가져오지 못했습니다.")
                                 else:
-                                    st.write("✅ 데이터 업로드 및 인덱싱이 완료되었습니다. (분석 중...)")
+                                    nb_id = uuid_match.group(0)
+                                    st.write("✅ NotebookLM 임시 분석 공간이 생성되었습니다. (데이터 업로드 중...)")
                                     
-                                    query = user_query
-                                    query_res = subprocess.run(["nlm", "query", "notebook", nb_id, query], capture_output=True, text=True, encoding='utf-8')
-                                    
-                                    query_stdout = str(query_res.stdout) if query_res.stdout else ""
-                                    
-                                    if query_res.returncode != 0:
-                                        st.error("AI 인사이트 도출 중 오류가 발생했습니다.")
+                                    src_res = subprocess.run(["nlm", "source", "add", nb_id, "--file", temp_path, "--wait"], capture_output=True, text=True, encoding='utf-8')
+                                    if src_res.returncode != 0:
+                                        st.error("데이터 업로드 중 오류가 발생했습니다.")
                                     else:
-                                        st.success("🎉 분석 완료!")
-                                        st.markdown("---")
+                                        st.write("✅ 데이터 업로드 및 인덱싱이 완료되었습니다. (분석 중...)")
                                         
-                                        # JSON 형태로 반환되는 응답에서 answer 부분만 추출
-                                        try:
-                                            import json
-                                            parsed_res = json.loads(query_stdout)
-                                            # nlm cli 응답 구조에 맞춰 파싱
-                                            if "value" in parsed_res and "answer" in parsed_res["value"]:
-                                                final_answer = parsed_res["value"]["answer"]
-                                            else:
-                                                final_answer = query_stdout
-                                        except Exception:
-                                            # JSON 파싱 실패 시 원본 출력
-                                            final_answer = query_stdout
+                                        query = user_query
+                                        query_res = subprocess.run(["nlm", "query", "notebook", nb_id, query], capture_output=True, text=True, encoding='utf-8')
+                                        
+                                        query_stdout = str(query_res.stdout) if query_res.stdout else ""
+                                        
+                                        if query_res.returncode != 0:
+                                            st.error("AI 인사이트 도출 중 오류가 발생했습니다.")
+                                        else:
+                                            st.success("🎉 분석 완료!")
+                                            st.markdown("---")
                                             
-                                        st.markdown(final_answer)
-                                        
-                                        subprocess.run(["nlm", "delete", "notebook", nb_id, "--confirm"], capture_output=True, text=True, encoding='utf-8')
-                    except Exception as e:
-                        st.error(f"오류가 발생했습니다: {e}")
-                    finally:
-                        if os.path.exists(temp_path):
-                            os.remove(temp_path)
+                                            # JSON 형태로 반환되는 응답에서 answer 부분만 추출
+                                            try:
+                                                import json
+                                                parsed_res = json.loads(query_stdout)
+                                                # nlm cli 응답 구조에 맞춰 파싱
+                                                if "value" in parsed_res and "answer" in parsed_res["value"]:
+                                                    final_answer = parsed_res["value"]["answer"]
+                                                else:
+                                                    final_answer = query_stdout
+                                            except Exception:
+                                                # JSON 파싱 실패 시 원본 출력
+                                                final_answer = query_stdout
+                                                
+                                            st.markdown(final_answer)
+                                            
+                                            subprocess.run(["nlm", "delete", "notebook", nb_id, "--confirm"], capture_output=True, text=True, encoding='utf-8')
+                        except Exception as e:
+                            st.error(f"오류가 발생했습니다: {e}")
+                        finally:
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
 
     else:
         st.warning("데이터가 비어있거나 권한 문제로 불러올 수 없습니다.")
